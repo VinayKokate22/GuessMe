@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoGuesser — Party Game</title>
+  <meta name="description" content="A fun offline party game where teams race to pinpoint locations on a world map. Host on a projector, play on laptops!" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- App CSS -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SVG Defs (timer gradient)
+       ═══════════════════════════════════════════════════════════ -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#7c3aed" />
+        <stop offset="100%" stop-color="#06b6d4" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <!-- Confetti -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 1: Role Selection
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-role" class="screen active">
+    <div class="role-select-container">
+      <div class="game-logo">
+        <span class="logo-icon">🌍</span>
+        <h1>GeoGuesser</h1>
+        <p class="subtitle">Pin it. Guess it. Win it.</p>
+      </div>
+
+      <div class="role-cards">
+        <div id="btn-role-admin" class="glass-card role-card admin" onclick="selectRole('admin')">
+          <span class="role-icon">🎙️</span>
+          <div class="role-title">Host the Game</div>
+          <div class="role-desc">Show hints on the projector, control rounds, and reveal answers</div>
+        </div>
+
+        <div id="btn-role-player" class="glass-card role-card player" onclick="selectRole('player')">
+          <span class="role-icon">📍</span>
+          <div class="role-title">Join as Team</div>
+          <div class="role-desc">Open the world map, pin your guess, and compete for points</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 2A: Admin Setup
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-admin-setup" class="screen">
+    <div class="setup-container">
+      <div class="glass-card no-hover">
+        <div class="setup-header">
+          <button class="back-btn" onclick="goBack()">← Back</button>
+          <span class="setup-icon">🎙️</span>
+          <h2>Host Setup</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="admin-rounds">Number of Rounds</label>
+          <input type="number" id="admin-rounds" min="1" max="20" value="5" />
+          <p class="hint">Excluding the demo round (1–20)</p>
+        </div>
+
+        <div class="form-group">
+          <label for="admin-timer">Timer per Round (seconds)</label>
+          <input type="number" id="admin-timer" min="15" max="180" value="60" />
+          <p class="hint">15–180 seconds</p>
+        </div>
+
+        <div class="form-group">
+          <label>Game Code</label>
+          <div id="admin-game-code" class="game-code-display">----</div>
+          <p class="hint warning">⚠️ Share this code, the timer, and round count with all teams!</p>
+        </div>
+
+        <button id="btn-admin-start" class="btn btn-primary btn-lg btn-block" onclick="startGame()">
+          🚀 Start Game
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 2B: Player Setup
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-player-setup" class="screen">
+    <div class="setup-container">
+      <div class="glass-card no-hover">
+        <div class="setup-header">
+          <button class="back-btn" onclick="goBack()">← Back</button>
+          <span class="setup-icon">📍</span>
+          <h2>Team Setup</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="player-team-name">Team Name</label>
+          <input type="text" id="player-team-name" placeholder="Enter your team name" maxlength="30" />
+        </div>
+
+        <div class="form-group">
+          <label for="player-game-code">Game Code</label>
+          <input type="number" id="player-game-code" placeholder="Enter the code from the host" min="1000" max="9999" />
+          <p class="hint">Ask the host for this 4-digit code</p>
+        </div>
+
+        <div class="form-group">
+          <label for="player-rounds">Number of Rounds</label>
+          <input type="number" id="player-rounds" min="1" max="20" value="5" />
+          <p class="hint">Must match what the host sets (excluding demo)</p>
+        </div>
+
+        <div class="form-group">
+          <label for="player-timer">Timer per Round (seconds)</label>
+          <input type="number" id="player-timer" min="15" max="180" value="60" />
+          <p class="hint">Must match what the host announces</p>
+        </div>
+
+        <button id="btn-player-start" class="btn btn-green btn-lg btn-block" onclick="startGame()">
+          🗺️ Let's Play
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 3A: Admin Game
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-admin-game" class="screen">
+    <div class="admin-game-container">
+
+      <!-- Phase: Pre-round (waiting to start) -->
+      <div id="admin-phase-pre" class="admin-phase">
+        <div id="admin-round-badge" class="round-badge demo">Demo Round</div>
+        <h2 style="font-family:var(--font-display);font-size:2rem;font-weight:800;margin-bottom:1rem;">
+          Ready for the next round?
+        </h2>
+        <p style="color:var(--text-secondary);margin-bottom:2rem;">
+          Make sure all teams are ready, then click below to reveal the hint and start the timer.
+        </p>
+        <button id="btn-admin-start-round" class="btn btn-gold btn-lg" onclick="adminStartRound()">
+          🎯 Show Hint & Start Timer
+        </button>
+      </div>
+
+      <!-- Phase: Active round (Street View + timer) -->
+      <div id="admin-phase-active" class="admin-phase" style="display:none;">
+        <div class="admin-active-header">
+          <div class="admin-header-left">
+            <span class="admin-brand"><span class="brand-emoji">🌍</span><span class="admin-brand-text">GeoGuesser</span></span>
+            <div id="admin-round-badge-active" class="round-badge demo">Demo Round</div>
+          </div>
+
+          <div class="admin-timer-inline">
+            <div id="admin-timer-circle" class="timer-circle">
+              <svg viewBox="0 0 160 160">
+                <circle class="timer-track" cx="80" cy="80" r="72" />
+                <circle id="admin-timer-progress" class="timer-progress" cx="80" cy="80" r="72"
+                        stroke-dasharray="452.39" stroke-dashoffset="0" />
+              </svg>
+              <div class="timer-value">
+                <span id="admin-timer-number" class="timer-number">60</span>
+                <span class="timer-label">seconds</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-header-right">
+            <div class="admin-code-hud">Code: <span id="admin-code-hud-value">----</span></div>
+            <button id="btn-admin-end-round" class="btn btn-danger btn-sm" onclick="adminEndRound()">
+              ⏱️ End Round
+            </button>
+          </div>
+        </div>
+
+        <!-- Street View iframe (free embed, no API key) -->
+        <div class="streetview-wrapper">
+          <iframe id="admin-streetview" class="streetview-frame"
+                  src="about:blank"
+                  frameborder="0"
+                  allowfullscreen
+                  loading="lazy"
+                  referrerpolicy="no-referrer"></iframe>
+        </div>
+
+        <!-- Floating Hints Card (Admin Only) -->
+        <div id="admin-hints-card" class="admin-hints-card collapsed-mobile">
+          <div class="hints-header" onclick="toggleAdminHints()">
+            <span class="hints-title">💡 Dynamic Hints</span>
+            <span id="admin-hints-toggle-icon" class="hints-toggle-icon">▼</span>
+          </div>
+          <div class="hints-content">
+            <div class="hint-item" id="admin-hint-1">
+              <span class="hint-icon">🗣️</span>
+              <div class="hint-details">
+                <span class="hint-label">Native Greeting (30s)</span>
+                <span class="hint-value" id="admin-hint-1-value">🔒 Unlocks in 30s</span>
+              </div>
+            </div>
+            <div class="hint-item" id="admin-hint-2">
+              <span class="hint-icon">🚩</span>
+              <div class="hint-details">
+                <span class="hint-label">Country Flag (40s)</span>
+                <span class="hint-value" id="admin-hint-2-value">🔒 Unlocks in 40s</span>
+              </div>
+            </div>
+            <div class="hint-item" id="admin-hint-3">
+              <span class="hint-icon">🏛️</span>
+              <div class="hint-details">
+                <span class="hint-label">Place Name (50s)</span>
+                <span class="hint-value" id="admin-hint-3-value">🔒 Unlocks in 50s</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fallback hint (shown if Street View unavailable) -->
+        <div id="admin-hint-fallback" class="hint-card glass-card no-hover" style="display:none;">
+          <span id="admin-category" class="category-badge"></span>
+          <span id="admin-difficulty" class="difficulty-badge easy"></span>
+          <p id="admin-hint-text" class="hint-text"></p>
+        </div>
+      </div>
+
+      <!-- Phase: Time's up (show reveal button) -->
+      <div id="admin-phase-timesup" class="admin-phase" style="display:none;">
+        <div class="timesup-section">
+          <span class="timesup-icon">⏰</span>
+          <h2 class="timesup-title">Time's Up!</h2>
+          <p style="color:var(--text-secondary);margin-bottom:2rem;font-size:1.1rem;">
+            Ready to reveal the answer?
+          </p>
+          <button class="btn btn-gold btn-lg" onclick="adminReveal()">
+            🗺️ Reveal Answer
+          </button>
+        </div>
+      </div>
+
+      <!-- Phase: Round results / reveal -->
+      <div id="admin-phase-reveal" class="admin-phase" style="display:none;">
+        <div class="reveal-section">
+          <div id="admin-reveal-badge" class="round-badge demo">Demo Round</div>
+          <p style="color:var(--text-secondary);margin-bottom:0.5rem;">The answer is…</p>
+          <h2 id="admin-reveal-name" class="location-name">Eiffel Tower, Paris</h2>
+
+          <div id="admin-reveal-map" class="admin-map-container"></div>
+
+          <button id="btn-admin-next" class="btn btn-primary btn-lg" onclick="nextRound()">
+            Next Round →
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 3B: Player Game
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-player-game" class="screen">
+    <div class="player-game-container">
+
+      <!-- Map -->
+      <div id="player-map" class="player-map"></div>
+
+      <!-- HUD -->
+      <div class="player-hud">
+        <div class="hud-left"></div>
+
+        <div class="hud-center">
+          <div id="hud-timer" class="hud-timer">--</div>
+        </div>
+
+        <div class="hud-right">
+          <div class="hud-score">
+            <span class="score-icon">🏆</span>
+            <span class="score-label">Score:</span>
+            <span id="hud-total-score" class="score-value">0</span>
+          </div>
+          <div class="hud-team-name">
+            <span id="hud-team-name-text">Team Name</span>
+          </div>
+          <div class="hud-round-info" id="hud-round-info">Demo Round</div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="player-actions" id="player-actions">
+        <!-- dynamically populated -->
+      </div>
+
+      <!-- Pre-round overlay -->
+      <div id="player-overlay-pre" class="player-overlay">
+        <div id="player-pre-round-badge" class="round-badge demo">Demo Round</div>
+        <h2 id="player-pre-title">Get Ready!</h2>
+        <p id="player-pre-desc">Wait for the host to show the hint, then press Start.</p>
+        <button id="btn-player-start-round" class="btn btn-gold btn-lg" onclick="playerStartRound()">
+          ▶️ Start Round
+        </button>
+      </div>
+
+      <!-- Results overlay -->
+      <div id="player-overlay-results" class="results-overlay hidden">
+        <div class="results-card glass-card no-hover">
+          <div id="player-result-location" class="result-location">Eiffel Tower, Paris</div>
+
+          <div id="player-demo-notice" class="demo-notice" style="display:none;">
+            ⭐ This was a demo round — points don't count!
+          </div>
+
+          <div class="results-stats">
+            <div class="result-stat">
+              <div class="stat-label">📍 Distance</div>
+              <div id="player-result-distance" class="stat-value distance">0 km</div>
+            </div>
+            <div class="result-stat">
+              <div class="stat-label">✨ Points</div>
+              <div id="player-result-points" class="stat-value points">0</div>
+            </div>
+            <div class="result-stat full-width total-score-stat">
+              <div class="stat-label">🏆 Total Score</div>
+              <div id="player-result-total" class="stat-value total">0</div>
+            </div>
+          </div>
+
+          <button id="btn-player-next" class="btn btn-primary btn-lg btn-block" onclick="nextRound()">
+            Ready for Next Round →
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 4A: Player Game Over
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-player-gameover" class="screen">
+    <div class="gameover-container">
+      <span class="trophy">🏆</span>
+      <h1>Game Over!</h1>
+      <p class="final-score-label" id="gameover-team-label">Team Name</p>
+      <div id="gameover-final-score" class="final-score-value">0</div>
+
+      <div class="round-breakdown glass-card no-hover" id="gameover-breakdown">
+        <h3>Round Breakdown</h3>
+        <!-- rows injected by JS -->
+      </div>
+
+      <button class="btn btn-primary btn-lg" onclick="playAgain()">🔁 Play Again</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 4B: Admin Game Over
+       ═══════════════════════════════════════════════════════════ -->
+  <div id="screen-admin-gameover" class="screen">
+    <div class="gameover-container admin-gameover">
+      <span class="trophy">🎉</span>
+      <h1>That's a Wrap!</h1>
+      <p class="gameover-message">
+        All rounds are complete!<br />
+        Ask each team to announce their final score. 🏆
+      </p>
+
+      <button class="btn btn-primary btn-lg" onclick="playAgain()">🔁 Play Again</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       Scripts
+       ═══════════════════════════════════════════════════════════ -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="locations.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
