@@ -193,7 +193,17 @@ function startGame() {
   // Prepare locations — use seeded shuffle so admin & players get same order
   state.demoLocation = LOCATIONS[0];
   const gamePool = seededShuffle(LOCATIONS.slice(1), state.gameCode);
-  state.locations = gamePool.slice(0, state.totalRounds);
+  
+  // Ensure alwaysInclude locations (like King's Landing) are always featured
+  const mustInclude = gamePool.filter((l) => l.alwaysInclude);
+  const others = gamePool.filter((l) => !l.alwaysInclude);
+  const selected = [
+    ...mustInclude.slice(0, state.totalRounds),
+    ...others.slice(0, Math.max(0, state.totalRounds - mustInclude.length)),
+  ];
+  
+  // Re-shuffle the selected subset deterministically so the always-include locations don't always occupy the first rounds
+  state.locations = seededShuffle(selected, state.gameCode + 1);
 
   // Reset state
   state.currentRound = 0;
@@ -241,6 +251,9 @@ function getStreetViewUrl(lat, lng, heading) {
 
 function adminStartRound() {
   const loc = getCurrentLocation();
+
+  // Play theme audio if exists
+  playLocationAudio(loc);
 
   // Load Street View iframe
   const iframe = document.getElementById("admin-streetview");
@@ -298,6 +311,7 @@ function adminEndRound() {
 
 /** Show "Time's Up" screen with Reveal button */
 function adminTimesUp() {
+  stopLocationAudio();
   // Clear Street View iframe
   document.getElementById("admin-streetview").src = "about:blank";
   showAdminPhase("timesup");
@@ -582,6 +596,10 @@ function playerStartRound() {
   state.guessLocked = false;
   state.roundActive = true;
 
+  // Play theme audio if exists
+  const loc = getCurrentLocation();
+  playLocationAudio(loc);
+
   // Reset map view
   state.playerMap.setView([20, 0], 2);
 
@@ -613,6 +631,7 @@ function updatePlayerTimer() {
 }
 
 function endPlayerRound() {
+  stopLocationAudio();
   state.roundActive = false;
   updatePlayerActions();
 
@@ -738,6 +757,7 @@ function clearMapMarkers() {
 // ── Next Round / Game Over ──────────────────────────────────────
 
 function nextRound() {
+  stopLocationAudio();
   // Clear any running timer
   if (state.timerInterval) {
     clearInterval(state.timerInterval);
@@ -814,6 +834,8 @@ function playAgain() {
   state.currentGuess = null;
   state.guessLocked = false;
   state.roundActive = false;
+
+  stopLocationAudio();
 
   if (state.timerInterval) {
     clearInterval(state.timerInterval);
@@ -954,5 +976,28 @@ function toggleAdminHints() {
   const toggleIcon = document.getElementById("admin-hints-toggle-icon");
   if (toggleIcon) {
     toggleIcon.textContent = isCollapsed ? "▼" : "▲";
+  }
+}
+
+// ── Audio Player Helpers ─────────────────────────────────────────
+
+let currentAudio = null;
+
+function playLocationAudio(loc) {
+  stopLocationAudio();
+
+  if (!loc || !loc.audioUrl) return;
+
+  currentAudio = new Audio(loc.audioUrl);
+  currentAudio.volume = 0.5;
+  currentAudio.play().catch((err) => {
+    console.warn("Audio playback blocked by browser policy or file not found:", err);
+  });
+}
+
+function stopLocationAudio() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
   }
 }
