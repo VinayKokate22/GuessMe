@@ -252,7 +252,7 @@ function getStreetViewUrl(lat, lng, heading) {
 function adminStartRound() {
   const loc = getCurrentLocation();
 
-  // Play theme audio if exists
+  // Play theme audio if exists (admin only)
   playLocationAudio(loc);
 
   // Load Street View iframe
@@ -596,9 +596,9 @@ function playerStartRound() {
   state.guessLocked = false;
   state.roundActive = true;
 
-  // Play theme audio if exists
-  const loc = getCurrentLocation();
-  playLocationAudio(loc);
+  // Don't play audio for players (only admin plays it)
+  // const loc = getCurrentLocation();
+  // playLocationAudio(loc);
 
   // Reset map view
   state.playerMap.setView([20, 0], 2);
